@@ -1,4 +1,4 @@
-import json, os
+import json, os, random, string
 from cryptography.fernet import Fernet
 from base64 import b64encode, b64decode
 
@@ -60,6 +60,17 @@ def retrieve_accounts():
         password = decrypt_data(b64decode(account_info['password']))
         print(f"Website: {website}, Username: {username}, Password: {password}")
 
+def add_accounts(N):
+    for i in range(N):
+        website = ''.join(random.choices(string.ascii_lowercase + string.digits, k = random.randrange(5, 12)))
+        website_domain = random.choice(['.com', '.net', '.org'])
+        username = ''.join(random.choices(string.ascii_lowercase + string.digits, k = 10))
+        password = ''.join(random.choices(string.ascii_lowercase + string.digits, k = 8))
+
+        add_account(website + website_domain, username, password)
+    
+    print("Added " + str(N) + " more accounts!")
+
 if __name__ == '__main__':
     with open('passwords.json', 'w') as file:
         json.dump({}, file, indent=4)
@@ -70,8 +81,9 @@ if __name__ == '__main__':
         print("2. Edit Account")
         print("3. Delete Account")
         print("4. List Accounts")
-        print("5. Exit")
-        choice = input("\nEnter your choice (1-5): ")
+        print("5. Add some sample accounts (for testing)")
+        print("6. Exit")
+        choice = input("\nEnter your choice (1-6): ")
 
         os.system("cls")
         
@@ -92,6 +104,9 @@ if __name__ == '__main__':
             print("\nList of Accounts:")
             retrieve_accounts()
         elif choice == '5':
+            N = int(input("Enter number of accounts: "))
+            add_accounts(N)
+        elif choice == '6':
             print("Exiting Password Manager. Goodbye!")
             break
         else:
