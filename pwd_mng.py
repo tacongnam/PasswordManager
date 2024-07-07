@@ -8,22 +8,20 @@ import json
 
 # Constants
 PASSWORD_FILE = "passwords.json"
-SALT = os.urandom(16)  # Ideally, you would store this safely and not regenerate it each run
+SALT = os.urandom(16)
 
-# Derive key from a password
 def derive_key(password: str, salt: bytes, iterations: int = 100000) -> bytes:
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
-        length=32,  # AES-256 key length is 32 bytes
+        length=32,
         salt=salt,
         iterations=iterations,
         backend=default_backend()
     )
     return kdf.derive(password.encode())
 
-# Encrypt a message
 def encrypt(message: str, key: bytes) -> str:
-    iv = os.urandom(12)  # Generate a random IV
+    iv = os.urandom(12)
     encryptor = Cipher(
         algorithms.AES(key),
         modes.GCM(iv),
@@ -33,7 +31,6 @@ def encrypt(message: str, key: bytes) -> str:
     ciphertext = encryptor.update(message.encode()) + encryptor.finalize()
     return urlsafe_b64encode(iv + encryptor.tag + ciphertext).decode()
 
-# Decrypt a message
 def decrypt(token: str, key: bytes) -> str:
     token_bytes = urlsafe_b64decode(token.encode())
     iv = token_bytes[:12]
@@ -48,13 +45,11 @@ def decrypt(token: str, key: bytes) -> str:
 
     return (decryptor.update(ciphertext) + decryptor.finalize()).decode()
 
-# Save passwords to a file
 def save_passwords(passwords: dict, key: bytes):
     encrypted_passwords = {k: encrypt(v, key) for k, v in passwords.items()}
     with open(PASSWORD_FILE, 'w') as file:
         json.dump(encrypted_passwords, file)
 
-# Load passwords from a file
 def load_passwords(key: bytes) -> dict:
     if not os.path.exists(PASSWORD_FILE):
         return {}
@@ -64,7 +59,6 @@ def load_passwords(key: bytes) -> dict:
 
     return {k: decrypt(v, key) for k, v in encrypted_passwords.items()}
 
-# Main password manager logic
 def main():
     master_password = input("Enter your master password: ")
     key = derive_key(master_password, SALT)
@@ -72,7 +66,7 @@ def main():
     passwords = load_passwords(key)
     
     while True:
-        action = input("Choose an action: [add/list/exit] ").lower()
+        action = input("Choose an action (add/list/exit) ").lower()
         os.system('cls')
         if action == 'add':
             service = input("Enter the service name: ")
