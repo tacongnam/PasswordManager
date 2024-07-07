@@ -1,113 +1,95 @@
-import json, os, random, string
-from cryptography.fernet import Fernet
-from base64 import b64encode, b64decode
+import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+from base64 import urlsafe_b64encode, urlsafe_b64decode
+import json
 
-key = Fernet.generate_key()
-cipher_suite = Fernet(key)
+# Constants
+PASSWORD_FILE = "passwords.json"
+SALT = os.urandom(16)  # Ideally, you would store this safely and not regenerate it each run
 
-def encrypt_data(data):
-    return cipher_suite.encrypt(data.encode())
+# Derive key from a password
+def derive_key(password: str, salt: bytes, iterations: int = 100000) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,  # AES-256 key length is 32 bytes
+        salt=salt,
+        iterations=iterations,
+        backend=default_backend()
+    )
+    return kdf.derive(password.encode())
 
-def decrypt_data(encrypted_data):
-    return cipher_suite.decrypt(encrypted_data).decode()
+# Encrypt a message
+def encrypt(message: str, key: bytes) -> str:
+    iv = os.urandom(12)  # Generate a random IV
+    encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
 
-def add_account(website, username, password):
-    with open('passwords.json', 'r') as file:
-        data = json.load(file)
+    ciphertext = encryptor.update(message.encode()) + encryptor.finalize()
+    return urlsafe_b64encode(iv + encryptor.tag + ciphertext).decode()
+
+# Decrypt a message
+def decrypt(token: str, key: bytes) -> str:
+    token_bytes = urlsafe_b64decode(token.encode())
+    iv = token_bytes[:12]
+    tag = token_bytes[12:28]
+    ciphertext = token_bytes[28:]
+
+    decryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv, tag),
+        backend=default_backend()
+    ).decryptor()
+
+    return (decryptor.update(ciphertext) + decryptor.finalize()).decode()
+
+# Save passwords to a file
+def save_passwords(passwords: dict, key: bytes):
+    encrypted_passwords = {k: encrypt(v, key) for k, v in passwords.items()}
+    with open(PASSWORD_FILE, 'w') as file:
+        json.dump(encrypted_passwords, file)
+
+# Load passwords from a file
+def load_passwords(key: bytes) -> dict:
+    if not os.path.exists(PASSWORD_FILE):
+        return {}
     
-    data[website] = {
-        'username': username,
-        'password': b64encode(encrypt_data(password)).decode('utf-8')
-    }
-    
-    with open('passwords.json', 'w') as file:
-        json.dump(data, file, indent=4)
-        print("Account added successfully!")
+    with open(PASSWORD_FILE, 'r') as file:
+        encrypted_passwords = json.load(file)
 
-def delete_account(website):
-    with open('passwords.json', 'r') as file:
-        data = json.load(file)
-    
-    if website in data:
-        del data[website]
-    
-    with open('passwords.json', 'w') as file:
-        json.dump(data, file, indent=4)
-        print("Account deleted successfully!")
+    return {k: decrypt(v, key) for k, v in encrypted_passwords.items()}
 
-def edit_account(website, new_username, new_password):
-    with open('passwords.json', 'r') as file:
-        data = json.load(file)
+# Main password manager logic
+def main():
+    master_password = input("Enter your master password: ")
+    key = derive_key(master_password, SALT)
     
-    if website not in data:
-        print("Account doesn't exist!")
-        return 
+    passwords = load_passwords(key)
     
-    if website in data:
-        data[website]['username'] = new_username
-        data[website]['password'] = b64encode(encrypt_data(new_password)).decode('utf-8')
-    
-    with open('passwords.json', 'w') as file:
-        json.dump(data, file, indent=4)
-        print("Account edited successfully!")
-
-def retrieve_accounts():
-    with open('passwords.json', 'r') as file:
-        data = json.load(file)
-    
-    for website, account_info in data.items():
-        username = account_info['username']
-        password = decrypt_data(b64decode(account_info['password']))
-        print(f"Website: {website}, Username: {username}, Password: {password}")
-
-def add_accounts(N):
-    for i in range(N):
-        website = ''.join(random.choices(string.ascii_lowercase + string.digits, k = random.randrange(5, 12)))
-        website_domain = random.choice(['.com', '.net', '.org'])
-        username = ''.join(random.choices(string.ascii_lowercase + string.digits, k = 10))
-        password = ''.join(random.choices(string.ascii_lowercase + string.digits, k = 8))
-
-        add_account(website + website_domain, username, password)
-    
-    print("Added " + str(N) + " more accounts!")
-
-if __name__ == '__main__':
-    with open('passwords.json', 'w') as file:
-        json.dump({}, file, indent=4)
-
     while True:
-        print("\nPassword Manager Menu:")
-        print("1. Add Account")
-        print("2. Edit Account")
-        print("3. Delete Account")
-        print("4. List Accounts")
-        print("5. Add some sample accounts (for testing)")
-        print("6. Exit")
-        choice = input("\nEnter your choice (1-6): ")
-
-        os.system("cls")
+        action = input("Choose an action: [add/list/exit] ").lower()
+        os.system('cls')
+        if action == 'add':
+            service = input("Enter the service name: ")
+            password = input("Enter the password: ")
+            passwords[service] = password
+            save_passwords(passwords, key)
+            print(f"Password for {service} added.")
         
-        if choice == '1':
-            website = input("Enter website/application name: ")
-            username = input("Enter username: ")
-            password = input("Enter password: ")
-            add_account(website, username, password)
-        elif choice == '2':
-            website = input("Enter website/application name to edit: ")
-            username = input("Enter new username: ")
-            password = input("Enter new password: ")
-            edit_account(website, username, password)
-        elif choice == '3':
-            website = input("Enter website/application name to delete: ")
-            delete_account(website)
-        elif choice == '4':
-            print("\nList of Accounts:")
-            retrieve_accounts()
-        elif choice == '5':
-            N = int(input("Enter number of accounts: "))
-            add_accounts(N)
-        elif choice == '6':
-            print("Exiting Password Manager. Goodbye!")
+        elif action == 'list':
+            for service, password in passwords.items():
+                print(f"Service: {service}, Password: {password}")
+        
+        elif action == 'exit':
             break
+        
         else:
-            print("Invalid choice. Please enter a number between 1 and 5.")
+            print("Invalid action. Please choose [add/list/exit].")
+
+if __name__ == "__main__":
+    main()
